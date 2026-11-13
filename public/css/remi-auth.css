@@ -1,0 +1,351 @@
+.auth-body {
+    background: var(--remi-color-bg-canvas);
+}
+
+.login-page {
+    display: grid;
+    grid-template-columns: 43.0556% 56.9444%;
+    min-height: 100vh;
+    background: var(--remi-color-bg-surface);
+}
+
+.login-brand-panel {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-height: 100vh;
+    padding: clamp(48px, 6.6vw, 95px) clamp(40px, 6.1vw, 88px) clamp(48px, 6.9vw, 100px);
+    background: var(--remi-color-action-primary);
+    color: var(--remi-color-text-inverse);
+}
+
+.remi-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.remi-brand__mark {
+    width: 35px;
+    height: 35px;
+    object-fit: cover;
+}
+
+.remi-brand__name {
+    font-size: 44px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.login-brand-content {
+    align-self: center;
+}
+
+.login-brand-content h1 {
+    margin: 0;
+    font-size: 36px;
+    font-weight: 600;
+    line-height: 44px;
+}
+
+.login-brand-content p {
+    margin: clamp(24px, 4vw, 57px) 0 0;
+    color: var(--remi-color-bg-brand-soft);
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 28px;
+}
+
+.collaboration-card {
+    width: min(100%, 444px);
+    padding: 11px 27px 9px;
+    border-radius: 18px;
+    background: var(--remi-color-bg-surface);
+}
+
+.collaboration-card__title {
+    margin: 0 0 8px;
+    color: var(--remi-color-action-primary);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 22px;
+}
+
+.collaboration-card__logos {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.collaboration-card__logo {
+    flex: 0 0 auto;
+    display: block;
+    object-fit: contain;
+}
+
+.collaboration-card__logo--1 {
+    width: 60px;
+    height: 31px;
+}
+
+.collaboration-card__logo--2 {
+    width: 60px;
+    height: 54px;
+}
+
+.collaboration-card__logo--3 {
+    width: 60px;
+    height: 60px;
+}
+
+.collaboration-card__logo--4 {
+    width: 50px;
+    height: 50px;
+}
+
+.collaboration-card__logo--5 {
+    width: 60px;
+    height: 19px;
+}
+
+.collaboration-card__logo--6 {
+    width: 60px;
+    height: 17px;
+}
+
+.login-brand-partners {
+    align-self: end;
+}
+
+.login-form-panel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding: clamp(40px, 8vw, 120px);
+    background: var(--remi-color-bg-surface);
+}
+
+.login-form-container {
+    width: min(100%, 470px);
+}
+
+.login-eyebrow,
+.login-form-panel h2,
+.login-description,
+.login-notice {
+    margin: 0;
+}
+
+.login-eyebrow {
+    color: var(--remi-color-action-primary);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 22px;
+}
+
+.login-form-panel h2 {
+    margin-top: 18px;
+    font-size: 36px;
+    font-weight: 600;
+    line-height: 44px;
+}
+
+.login-description {
+    margin-top: 14px;
+    color: var(--remi-color-text-secondary);
+    font-size: 14px;
+    line-height: 22px;
+}
+
+.auth-alert {
+    margin-top: 18px;
+    padding: 10px 14px;
+    border: 1px solid #f2b8b5;
+    border-radius: 8px;
+    background: #fff1f0;
+    color: var(--remi-color-error);
+    font-size: 14px;
+    line-height: 22px;
+}
+
+.login-form {
+    margin-top: 60px;
+}
+
+.login-form .ui-field+.ui-field {
+    margin-top: 25px;
+}
+
+.login-form__help {
+    min-height: 22px;
+    margin-top: 11px;
+    text-align: right;
+}
+
+.login-form__help a,
+.login-form__help span {
+    color: var(--remi-color-action-primary);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 22px;
+    text-decoration: none;
+}
+
+.login-form>.ui-button {
+    margin-top: 32px;
+}
+
+.login-notice {
+    margin-top: 26px;
+    color: var(--remi-color-text-secondary);
+    font-size: 14px;
+    line-height: 22px;
+    text-align: center;
+}
+
+.login-mobile-partners {
+    display: none;
+}
+
+@media (max-width: 900px) {
+    .login-page {
+        display: block;
+        min-height: 100vh;
+        background: var(--remi-color-bg-canvas);
+    }
+
+    .login-brand-panel {
+        grid-template-rows: auto 1fr;
+        min-height: 212px;
+        height: auto;
+        padding: 28px 24px;
+    }
+
+    .login-brand-content {
+        align-self: end;
+        padding-bottom: 26px;
+    }
+
+    .login-brand-content h1 {
+        font-size: 28px;
+        line-height: 36px;
+    }
+
+    .login-brand-content p,
+    .login-brand-partners {
+        display: none;
+    }
+
+    .login-form-panel {
+        display: block;
+        padding: 0;
+        background: var(--remi-color-bg-canvas);
+    }
+
+    .login-form-container {
+        width: auto;
+        margin: 0;
+        padding: 36px 24px 63px;
+    }
+
+    .login-eyebrow,
+    .login-notice {
+        display: none;
+    }
+
+    .login-form-panel h2 {
+        margin-top: 0;
+        font-size: 28px;
+        line-height: 36px;
+    }
+
+    .login-description {
+        margin-top: 8px;
+    }
+
+    .auth-alert {
+        margin-top: 12px;
+    }
+
+    .login-form {
+        margin-top: 37px;
+    }
+
+    .login-form .ui-field+.ui-field {
+        margin-top: 23px;
+    }
+
+    .login-form .ui-field__label {
+        margin-bottom: 6px;
+    }
+
+    .login-form .ui-field__control {
+        min-height: 56px;
+        padding: 16px 17px;
+    }
+
+    .login-form__help {
+        margin-top: 13px;
+    }
+
+    .login-form>.ui-button {
+        min-height: 56px;
+        margin-top: 18px;
+    }
+
+    .login-mobile-partners {
+        display: block;
+        width: 100%;
+        margin-top: 44px;
+        padding: 11px 27px 14px;
+    }
+
+    .collaboration-card__logos {
+        justify-content: space-between;
+        gap: 5px;
+    }
+
+    .collaboration-card__logo--1 {
+        width: 43px;
+        height: 22px;
+    }
+
+    .collaboration-card__logo--2 {
+        width: 43px;
+        height: 38px;
+    }
+
+    .collaboration-card__logo--3 {
+        width: 43px;
+        height: 43px;
+    }
+
+    .collaboration-card__logo--4 {
+        width: 38px;
+        height: 38px;
+    }
+
+    .collaboration-card__logo--5 {
+        width: 43px;
+        height: 14px;
+    }
+
+    .collaboration-card__logo--6 {
+        width: 43px;
+        height: 12px;
+    }
+}
+
+@media (max-width: 380px) {
+
+    .login-brand-panel,
+    .login-form-container {
+        padding-right: 18px;
+        padding-left: 18px;
+    }
+
+    .collaboration-card {
+        padding-right: 18px;
+        padding-left: 18px;
+    }
+}
