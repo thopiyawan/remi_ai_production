@@ -16,7 +16,7 @@ return new class extends Migration
         //     $table->timestamps();
         // });
 
-         Schema::create('meal_item_logs', function (Blueprint $table) {
+        Schema::create('meal_item_logs', function (Blueprint $table) {
             $table->id();
 
             $table->foreignId('meal_item_id')

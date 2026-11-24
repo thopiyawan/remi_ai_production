@@ -52,6 +52,10 @@ class UsersRegister extends Migration
             //$table->rememberToken(); 
             //$table->timestamps();
         });
+
+        Schema::table('users_register', function (Blueprint $table) {
+            $table->unique('user_id');
+        });
     }
 
     /**

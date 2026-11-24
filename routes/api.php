@@ -207,4 +207,8 @@ Route::controller(RemiDataApiController::class)->middleware(AddBuddhistEraDates:
     Route::post('doctor_patient_conversations', 'doctor_patient_conversations');
     Route::post('patient_conversation_detail', 'patient_conversation_detail');
     Route::post('insert_food', 'insert_food');
+    Route::post('insulin-plan', 'insertPlan');
+    Route::post('insulin-adjust', 'adjustPlan');
+    Route::post('insulin-history', 'insertPatientHistory');
+
 });

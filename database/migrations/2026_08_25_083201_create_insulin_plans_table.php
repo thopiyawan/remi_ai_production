@@ -16,11 +16,13 @@ return new class extends Migration
         //     $table->timestamps();
         // });
 
-        Schema::create('insulin_plans', function (Blueprint $table) {
+       Schema::create('insulin_plans', function (Blueprint $table) {
                 $table->id();
+                $table->string('user_id', 255);
 
-                $table->foreignId('user_id')
-                    ->constrained('users_register')
+                $table->foreign('user_id')
+                    ->references('user_id')
+                    ->on('users_register')
                     ->restrictOnDelete();
 
                 $table->foreignId('insulin_id')
@@ -54,9 +56,12 @@ return new class extends Migration
                 */
                 $table->string('status', 30)->default('active');
                 $table->string('prescribed_by');
-                
+    
                 $table->text('note')->nullable();
-
+                $table->string('previous_plan_id')->nullable();
+                $table->text('change_reason')->nullable();
+                $table->text('recommendation')->nullable();
+                $table->text('injection_method')->nullable();
                 $table->timestamps();
 
                 $table->index(['user_id', 'status']);

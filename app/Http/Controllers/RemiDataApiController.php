@@ -3142,4 +3142,1242 @@ public function patient_conversation_detail(Request $request)
         ],
     ]);
 }
+
+/////////////////////////////////////////////////////////////////
+public function patient_diabetes_detail(Request $request)
+{
+    $input = $request->validate([
+        'doctor_id' => 'required|string|max:255',
+        'patient_id' => 'required|integer|min:1',
+        'start_date' => 'required|date_format:Y-m-d',
+        'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date',
+    ]);
+
+    $doctorId = $input['doctor_id'];
+
+    // รับ doctor_id จากหน้าเว็บ แต่ตรวจสิทธิ์บนระบบจริง
+    if (!app()->environment('local')) {
+        $sessionDoctorId = Session::get('doctor_id');
+
+        if ($sessionDoctorId === null || $sessionDoctorId === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'กรุณาเข้าสู่ระบบแพทย์',
+            ], 401);
+        }
+
+        if ((string) $sessionDoctorId !== (string) $doctorId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'ไม่มีสิทธิ์เข้าถึง',
+            ], 403);
+        }
+    }
+
+    $start = CarbonImmutable::parse($input['start_date'], 'Asia/Bangkok');
+    $end = CarbonImmutable::parse($input['end_date'], 'Asia/Bangkok');
+
+    if ($start->diffInDays($end) > 365) {
+        return response()->json([
+            'success' => false,
+            'message' => 'เลือกช่วงวันที่ได้ไม่เกิน 366 วัน',
+        ], 422);
+    }
+
+    // ตั้งให้ตรงกับเวลาที่ฐานข้อมูลเก็บจริง
+    $dbTimezone = 'Asia/Bangkok';
+
+    $from = $start->setTimezone($dbTimezone)->toDateTimeString();
+    $until = $end->addDay()
+        ->setTimezone($dbTimezone)
+        ->toDateTimeString();
+
+    // ---------------------------------------
+    // 1. ข้อมูลผู้รับบริการ
+    // ---------------------------------------
+
+    $patient = DB::table('users_register as p')
+        ->where('p.id', $input['user_id'])
+        ->whereNull('p.deleted_at')
+        ->whereExists(function ($query) use ($doctorId) {
+            $query->selectRaw('1')
+                ->from('personal_doctor_mom as pd')
+                ->whereColumn('pd.user_id', 'p.user_id')
+                ->where('pd.doctor_id', $doctorId)
+                ->whereNull('pd.deleted_at');
+        })
+        ->select(
+            'p.id',
+            'p.user_id',
+            'p.user_name',
+            'p.hospital_num',
+            'p.user_age',
+            'p.preg_week',
+            'p.compli_diabete',
+            'p.compli_hypertension',
+            'p.compli_preterm_birth'
+        )
+        ->first();
+
+    if (!$patient) {
+        return response()->json([
+            'success' => false,
+            'message' => 'ไม่พบผู้รับบริการหรือไม่มีสิทธิ์เข้าถึง',
+        ], 404);
+    }
+
+    // ---------------------------------------
+    // 2. ค่าน้ำตาล
+    // เกณฑ์ตามโค้ดระบบที่คุณให้ไว้
+    // ---------------------------------------
+
+    $mealLabels = [
+        1 => 'เช้า',
+        2 => 'กลางวัน',
+        3 => 'เย็น',
+    ];
+
+    $periods = [
+        1 => [
+            'key' => 'before_meal',
+            'label' => 'ก่อนอาหาร',
+            'min' => 60,
+            'max' => 95,
+        ],
+        2 => [
+            'key' => 'after_meal_1h',
+            'label' => 'หลังอาหาร 1 ชั่วโมง',
+            'min' => 60,
+            'max' => 140,
+        ],
+        4 => [
+            'key' => 'after_meal_2h',
+            'label' => 'หลังอาหาร 2 ชั่วโมง',
+            'min' => 60,
+            'max' => 120,
+        ],
+    ];
+
+    $readings = DB::table('blood_sugar')
+        ->where('user_id', $patient->user_id)
+        ->whereNull('deleted_at')
+        ->where('datetime', '>=', $from)
+        ->where('datetime', '<', $until)
+        ->orderBy('datetime')
+        ->orderBy('id')
+        ->get([
+            'id',
+            'datetime',
+            'meal',
+            'time_of_day',
+            'blood_sugar',
+            'preg_week',
+        ])
+        ->map(function ($row) use ($mealLabels, $periods, $dbTimezone) {
+            $mealCode = trim((string) $row->meal);
+            $timeCode = trim((string) $row->time_of_day);
+
+            $period = $periods[$timeCode] ?? null;
+            $value = (float) $row->blood_sugar;
+
+            if ($value < 60) {
+                $status = 'low';
+            } elseif ($period === null) {
+                $status = 'unknown';
+            } elseif ($value > $period['max']) {
+                $status = 'high';
+            } else {
+                $status = 'normal';
+            }
+
+            $datetime = CarbonImmutable::parse(
+                $row->datetime,
+                $dbTimezone
+            )->setTimezone('Asia/Bangkok');
+
+            return [
+                'id' => $row->id,
+                'date' => $datetime->toDateString(),
+                'time' => $datetime->format('H:i:s'),
+                'meal' => $mealLabels[$mealCode] ?? 'ไม่ทราบมื้อ',
+                'period' => $period['key'] ?? 'unknown',
+                'period_label' => $period['label'] ?? 'ไม่ทราบช่วงตรวจ',
+                'value' => $value,
+                'unit' => 'mg/dL',
+                'target' => $period === null ? null : [
+                    'min' => $period['min'],
+                    'max' => $period['max'],
+                    'unit' => 'mg/dL',
+                ],
+                'status' => $status,
+                'gestational_week' => $row->preg_week,
+                'measured_at' => $datetime->toIso8601String(),
+            ];
+        });
+
+    // ---------------------------------------
+    // 3. แนวโน้มและสรุป
+    // ---------------------------------------
+
+    $summarize = static function ($items) {
+        $total = $items->count();
+        $low = $items->where('status', 'low')->count();
+        $normal = $items->where('status', 'normal')->count();
+        $high = $items->where('status', 'high')->count();
+
+        $classified = $low + $normal + $high;
+
+        $percent = static fn ($count) => $classified > 0
+            ? round($count * 100 / $classified, 2)
+            : null;
+
+        return [
+            'total' => $total,
+            'classified_total' => $classified,
+            'unknown_total' => $total - $classified,
+            'average_mg_dl' => $total > 0
+                ? round($items->avg('value'), 2)
+                : null,
+            'min_mg_dl' => $total > 0 ? $items->min('value') : null,
+            'max_mg_dl' => $total > 0 ? $items->max('value') : null,
+            'low' => [
+                'count' => $low,
+                'percentage' => $percent($low),
+            ],
+            'normal' => [
+                'count' => $normal,
+                'percentage' => $percent($normal),
+            ],
+            'high' => [
+                'count' => $high,
+                'percentage' => $percent($high),
+            ],
+        ];
+    };
+
+    $periodSummary = [];
+
+    foreach ([
+        'before_meal' => 'ก่อนอาหาร',
+        'after_meal_1h' => 'หลังอาหาร 1 ชั่วโมง',
+        'after_meal_2h' => 'หลังอาหาร 2 ชั่วโมง',
+        'bedtime' => 'ก่อนนอน',
+        'unknown' => 'ไม่ทราบช่วงตรวจ',
+    ] as $key => $label) {
+        $periodSummary[$key] = [
+            'label' => $label,
+            'summary' => $summarize(
+                $readings->where('period', $key)->values()
+            ),
+        ];
+    }
+
+    $afterMealSummary = $summarize(
+        $readings->whereIn('period', [
+            'after_meal_1h',
+            'after_meal_2h',
+        ])->values()
+    );
+
+    $dailyTrend = $readings
+        ->groupBy('date')
+        ->map(function ($items, $date) use ($summarize) {
+            return [
+                'date' => $date,
+                'periods' => $items->groupBy('period')
+                    ->map(function ($rows, $period) use ($summarize) {
+                        return [
+                            'period' => $period,
+                            'summary' => $summarize($rows),
+                        ];
+                    })
+                    ->values(),
+            ];
+        })
+        ->values();
+
+    // ตรวจฟิลด์เพิ่มเติมที่อาจยังไม่ได้ migrate
+    $planColumns = Schema::getColumnListing('insulin_plans');
+
+    $hasPlanColumn = static fn ($column) =>
+        in_array($column, $planColumns, true);
+
+    // ---------------------------------------
+    // 4. แผนอินซูลินปัจจุบัน ณ วันนี้
+    // ---------------------------------------
+
+    $today = CarbonImmutable::now('Asia/Bangkok')->toDateString();
+
+    $currentQuery = DB::table('insulin_plans as ip')
+        ->join('insulins as i', 'i.id', '=', 'ip.insulin_id')
+        ->where('ip.user_id', $patient->id)
+        ->where('ip.status', 'active')
+        ->where('ip.start_date', '<=', $today)
+        ->where(function ($query) use ($today) {
+            $query->whereNull('ip.end_date')
+                ->orWhere('ip.end_date', '>=', $today);
+        })
+        ->select(
+            'ip.id',
+            'i.name_th as insulin_name',
+            'i.insulin_type',
+            'ip.dose_units',
+            'ip.injection_period',
+            'ip.injection_time',
+            'ip.start_date',
+            'ip.end_date',
+            'ip.prescribed_by',
+            'ip.note'
+        );
+
+    if ($hasPlanColumn('injection_method')) {
+        $currentQuery->addSelect('ip.injection_method');
+    } else {
+        $currentQuery->selectRaw('NULL as injection_method');
+    }
+
+    $currentInsulin = $currentQuery
+        ->orderBy('ip.injection_time')
+        ->orderBy('ip.id')
+        ->get()
+        ->map(function ($row) {
+            $row->dose_units = (float) $row->dose_units;
+            return $row;
+        });
+
+    // ---------------------------------------
+    // 5. ประวัติปรับยา: แผนใหม่ JOIN แผนเดิม
+    // ไม่ใช้ insulin_history
+    // ---------------------------------------
+
+    $adjustmentAvailable = $hasPlanColumn('previous_plan_id');
+    $adjustments = collect();
+
+    if ($adjustmentAvailable) {
+        $adjustmentQuery = DB::table('insulin_plans as new_plan')
+            ->join('insulin_plans as old_plan', function ($join) {
+                $join->on('old_plan.id', '=', 'new_plan.previous_plan_id')
+                    ->on('old_plan.user_id', '=', 'new_plan.user_id');
+            })
+            ->join(
+                'insulins as new_insulin',
+                'new_insulin.id',
+                '=',
+                'new_plan.insulin_id'
+            )
+            ->join(
+                'insulins as old_insulin',
+                'old_insulin.id',
+                '=',
+                'old_plan.insulin_id'
+            )
+            ->where('new_plan.user_id', $patient->id)
+            ->where('new_plan.created_at', '>=', $from)
+            ->where('new_plan.created_at', '<', $until)
+            ->select(
+                'old_plan.id as old_plan_id',
+                'new_plan.id as new_plan_id',
+                'old_insulin.name_th as old_insulin_name',
+                'new_insulin.name_th as new_insulin_name',
+                'old_plan.dose_units as old_dose_units',
+                'new_plan.dose_units as new_dose_units',
+                'new_plan.injection_period',
+                'new_plan.injection_time',
+                'new_plan.prescribed_by',
+                'new_plan.start_date',
+                'new_plan.note',
+                'new_plan.created_at as adjusted_at'
+            );
+
+        if ($hasPlanColumn('change_reason')) {
+            $adjustmentQuery->addSelect('new_plan.change_reason as reason');
+        } else {
+            $adjustmentQuery->selectRaw('NULL as reason');
+        }
+
+        if ($hasPlanColumn('recommendation')) {
+            $adjustmentQuery->addSelect('new_plan.recommendation');
+        } else {
+            $adjustmentQuery->selectRaw('NULL as recommendation');
+        }
+
+        $adjustments = $adjustmentQuery
+            ->orderByDesc('new_plan.created_at')
+            ->orderByDesc('new_plan.id')
+            ->get()
+            ->map(function ($row) {
+                $row->old_dose_units = (float) $row->old_dose_units;
+                $row->new_dose_units = (float) $row->new_dose_units;
+
+                return $row;
+            });
+    }
+
+    return response()->json([
+        'success' => true,
+        'data' => [
+            'basic_info' => [
+                'patient_id' => (int) $patient->id,
+                'name' => $patient->user_name,
+                'hn' => $patient->hospital_num,
+                'age' => $patient->user_age,
+                'gestational_week' => $patient->preg_week,
+                'risk_level' => null,
+                'complication_codes' => [
+                    'diabetes' => $patient->compli_diabete,
+                    'hypertension' => $patient->compli_hypertension,
+                    'preterm_birth' => $patient->compli_preterm_birth,
+                ],
+            ],
+
+            'selected_period' => [
+                'start_date' => $input['start_date'],
+                'end_date' => $input['end_date'],
+                'timezone' => 'Asia/Bangkok',
+            ],
+
+            'blood_sugar_history' => $readings,
+
+            'trend_and_summary' => [
+                'overall' => $summarize($readings),
+                'by_period' => $periodSummary,
+                'after_meal_combined' => $afterMealSummary,
+                'daily_trend' => $dailyTrend,
+                'graph_data' => $readings->map(fn ($row) => [
+                    'datetime' => $row['measured_at'],
+                    'value' => $row['value'],
+                    'series' => $row['period'],
+                    'meal' => $row['meal'],
+                    'status' => $row['status'],
+                    'target' => $row['target'],
+                ])->values(),
+            ],
+
+            'current_insulin' => [
+                'as_of_date' => $today,
+                'items' => $currentInsulin,
+            ],
+
+            'medication_adjustment_history' => [
+                'available' => $adjustmentAvailable,
+                'items' => $adjustments,
+                'reason' => $adjustmentAvailable
+                    ? null
+                    : 'ต้องเพิ่ม previous_plan_id และเชื่อมแผนใหม่กับแผนเดิม',
+            ],
+        ],
+    ]);
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//ดึงข้อมูล insulin
+public function patient_diabetes_detail(Request $request)
+{
+    $input = $request->validate([
+        'doctor_id' => 'required|string|max:255',
+        'user_id' => 'required|string|max:255',
+        'start_date' => 'required|date_format:Y-m-d',
+        'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date',
+    ]);
+
+    $doctorId = $input['doctor_id'];
+
+    // รับ doctor_id จากหน้าเว็บ แต่ตรวจสิทธิ์บนระบบจริง
+    if (!app()->environment('local')) {
+        $sessionDoctorId = Session::get('doctor_id');
+
+        if ($sessionDoctorId === null || $sessionDoctorId === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'กรุณาเข้าสู่ระบบแพทย์',
+            ], 401);
+        }
+
+        if ((string) $sessionDoctorId !== (string) $doctorId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'ไม่มีสิทธิ์เข้าถึง',
+            ], 403);
+        }
+    }
+
+    $start = CarbonImmutable::parse($input['start_date'], 'Asia/Bangkok');
+    $end = CarbonImmutable::parse($input['end_date'], 'Asia/Bangkok');
+
+    if ($start->diffInDays($end) > 365) {
+        return response()->json([
+            'success' => false,
+            'message' => 'เลือกช่วงวันที่ได้ไม่เกิน 366 วัน',
+        ], 422);
+    }
+
+    // ตั้งให้ตรงกับเวลาที่ฐานข้อมูลเก็บจริง
+    $dbTimezone = 'Asia/Bangkok';
+
+    $from = $start->setTimezone($dbTimezone)->toDateTimeString();
+    $until = $end->addDay()
+        ->setTimezone($dbTimezone)
+        ->toDateTimeString();
+
+    // ---------------------------------------
+    // 1. ข้อมูลผู้รับบริการ
+    // ---------------------------------------
+
+    $patient = DB::table('users_register as p')
+        ->where('p.id', $input['user_id'])
+        ->whereNull('p.deleted_at')
+        ->whereExists(function ($query) use ($doctorId) {
+            $query->selectRaw('1')
+                ->from('personal_doctor_mom as pd')
+                ->whereColumn('pd.user_id', 'p.user_id')
+                ->where('pd.doctor_id', $doctorId)
+                ->whereNull('pd.deleted_at');
+        })
+        ->select(
+            'p.id',
+            'p.user_id',
+            'p.user_name',
+            'p.hospital_num',
+            'p.user_age',
+            'p.preg_week',
+            'p.compli_diabete',
+            'p.compli_hypertension',
+            'p.compli_preterm_birth'
+        )
+        ->first();
+
+    if (!$patient) {
+        return response()->json([
+            'success' => false,
+            'message' => 'ไม่พบผู้รับบริการหรือไม่มีสิทธิ์เข้าถึง',
+        ], 404);
+    }
+
+    // ---------------------------------------
+    // 2. ค่าน้ำตาล
+    // เกณฑ์ตามโค้ดระบบที่คุณให้ไว้
+    // ---------------------------------------
+
+    $mealLabels = [
+        1 => 'เช้า',
+        2 => 'กลางวัน',
+        3 => 'เย็น',
+    ];
+
+    $periods = [
+        1 => [
+            'key' => 'before_meal',
+            'label' => 'ก่อนอาหาร',
+            'min' => 60,
+            'max' => 95,
+        ],
+        2 => [
+            'key' => 'after_meal_1h',
+            'label' => 'หลังอาหาร 1 ชั่วโมง',
+            'min' => 60,
+            'max' => 140,
+        ],
+        4 => [
+            'key' => 'after_meal_2h',
+            'label' => 'หลังอาหาร 2 ชั่วโมง',
+            'min' => 60,
+            'max' => 120,
+        ],
+    ];
+
+    $readings = DB::table('blood_sugar')
+        ->where('user_id', $patient->user_id)
+        ->whereNull('deleted_at')
+        ->where('datetime', '>=', $from)
+        ->where('datetime', '<', $until)
+        ->orderBy('datetime')
+        ->orderBy('id')
+        ->get([
+            'id',
+            'datetime',
+            'meal',
+            'time_of_day',
+            'blood_sugar',
+            'preg_week',
+        ])
+        ->map(function ($row) use ($mealLabels, $periods, $dbTimezone) {
+            $mealCode = trim((string) $row->meal);
+            $timeCode = trim((string) $row->time_of_day);
+
+            $period = $periods[$timeCode] ?? null;
+            $value = (float) $row->blood_sugar;
+
+            if ($value < 60) {
+                $status = 'low';
+            } elseif ($period === null) {
+                $status = 'unknown';
+            } elseif ($value > $period['max']) {
+                $status = 'high';
+            } else {
+                $status = 'normal';
+            }
+
+            $datetime = CarbonImmutable::parse(
+                $row->datetime,
+                $dbTimezone
+            )->setTimezone('Asia/Bangkok');
+
+            return [
+                'id' => $row->id,
+                'date' => $datetime->toDateString(),
+                'time' => $datetime->format('H:i:s'),
+                'meal' => $mealLabels[$mealCode] ?? 'ไม่ทราบมื้อ',
+                'period' => $period['key'] ?? 'unknown',
+                'period_label' => $period['label'] ?? 'ไม่ทราบช่วงตรวจ',
+                'value' => $value,
+                'unit' => 'mg/dL',
+                'target' => $period === null ? null : [
+                    'min' => $period['min'],
+                    'max' => $period['max'],
+                    'unit' => 'mg/dL',
+                ],
+                'status' => $status,
+                'gestational_week' => $row->preg_week,
+                'measured_at' => $datetime->toIso8601String(),
+            ];
+        });
+
+    // ---------------------------------------
+    // 3. แนวโน้มและสรุป
+    // ---------------------------------------
+
+    $summarize = static function ($items) {
+        $total = $items->count();
+        $low = $items->where('status', 'low')->count();
+        $normal = $items->where('status', 'normal')->count();
+        $high = $items->where('status', 'high')->count();
+
+        $classified = $low + $normal + $high;
+
+        $percent = static fn ($count) => $classified > 0
+            ? round($count * 100 / $classified, 2)
+            : null;
+
+        return [
+            'total' => $total,
+            'classified_total' => $classified,
+            'unknown_total' => $total - $classified,
+            'average_mg_dl' => $total > 0
+                ? round($items->avg('value'), 2)
+                : null,
+            'min_mg_dl' => $total > 0 ? $items->min('value') : null,
+            'max_mg_dl' => $total > 0 ? $items->max('value') : null,
+            'low' => [
+                'count' => $low,
+                'percentage' => $percent($low),
+            ],
+            'normal' => [
+                'count' => $normal,
+                'percentage' => $percent($normal),
+            ],
+            'high' => [
+                'count' => $high,
+                'percentage' => $percent($high),
+            ],
+        ];
+    };
+
+    $periodSummary = [];
+
+    foreach ([
+        'before_meal' => 'ก่อนอาหาร',
+        'after_meal_1h' => 'หลังอาหาร 1 ชั่วโมง',
+        'after_meal_2h' => 'หลังอาหาร 2 ชั่วโมง',
+        'bedtime' => 'ก่อนนอน',
+        'unknown' => 'ไม่ทราบช่วงตรวจ',
+    ] as $key => $label) {
+        $periodSummary[$key] = [
+            'label' => $label,
+            'summary' => $summarize(
+                $readings->where('period', $key)->values()
+            ),
+        ];
+    }
+
+    $afterMealSummary = $summarize(
+        $readings->whereIn('period', [
+            'after_meal_1h',
+            'after_meal_2h',
+        ])->values()
+    );
+
+    $dailyTrend = $readings
+        ->groupBy('date')
+        ->map(function ($items, $date) use ($summarize) {
+            return [
+                'date' => $date,
+                'periods' => $items->groupBy('period')
+                    ->map(function ($rows, $period) use ($summarize) {
+                        return [
+                            'period' => $period,
+                            'summary' => $summarize($rows),
+                        ];
+                    })
+                    ->values(),
+            ];
+        })
+        ->values();
+
+    // ตรวจฟิลด์เพิ่มเติมที่อาจยังไม่ได้ migrate
+    $planColumns = Schema::getColumnListing('insulin_plans');
+
+    $hasPlanColumn = static fn ($column) =>
+        in_array($column, $planColumns, true);
+
+    // ---------------------------------------
+    // 4. แผนอินซูลินปัจจุบัน ณ วันนี้
+    // ---------------------------------------
+
+    $today = CarbonImmutable::now('Asia/Bangkok')->toDateString();
+
+    $currentQuery = DB::table('insulin_plans as ip')
+        ->join('insulins as i', 'i.id', '=', 'ip.insulin_id')
+        ->where('ip.user_id', $patient->id)
+        ->where('ip.status', 'active')
+        ->where('ip.start_date', '<=', $today)
+        ->where(function ($query) use ($today) {
+            $query->whereNull('ip.end_date')
+                ->orWhere('ip.end_date', '>=', $today);
+        })
+        ->select(
+            'ip.id',
+            'i.name_th as insulin_name',
+            'i.insulin_type',
+            'ip.dose_units',
+            'ip.injection_period',
+            'ip.injection_time',
+            'ip.start_date',
+            'ip.end_date',
+            'ip.prescribed_by',
+            'ip.note'
+        );
+
+    if ($hasPlanColumn('injection_method')) {
+        $currentQuery->addSelect('ip.injection_method');
+    } else {
+        $currentQuery->selectRaw('NULL as injection_method');
+    }
+
+    $currentInsulin = $currentQuery
+        ->orderBy('ip.injection_time')
+        ->orderBy('ip.id')
+        ->get()
+        ->map(function ($row) {
+            $row->dose_units = (float) $row->dose_units;
+            return $row;
+        });
+
+    // ---------------------------------------
+    // 5. ประวัติปรับยา: แผนใหม่ JOIN แผนเดิม
+    // ไม่ใช้ insulin_history
+    // ---------------------------------------
+
+    $adjustmentAvailable = $hasPlanColumn('previous_plan_id');
+    $adjustments = collect();
+
+    if ($adjustmentAvailable) {
+        $adjustmentQuery = DB::table('insulin_plans as new_plan')
+            ->join('insulin_plans as old_plan', function ($join) {
+                $join->on('old_plan.id', '=', 'new_plan.previous_plan_id')
+                    ->on('old_plan.user_id', '=', 'new_plan.user_id');
+            })
+            ->join(
+                'insulins as new_insulin',
+                'new_insulin.id',
+                '=',
+                'new_plan.insulin_id'
+            )
+            ->join(
+                'insulins as old_insulin',
+                'old_insulin.id',
+                '=',
+                'old_plan.insulin_id'
+            )
+            ->where('new_plan.user_id', $patient->id)
+            ->where('new_plan.created_at', '>=', $from)
+            ->where('new_plan.created_at', '<', $until)
+            ->select(
+                'old_plan.id as old_plan_id',
+                'new_plan.id as new_plan_id',
+                'old_insulin.name_th as old_insulin_name',
+                'new_insulin.name_th as new_insulin_name',
+                'old_plan.dose_units as old_dose_units',
+                'new_plan.dose_units as new_dose_units',
+                'new_plan.injection_period',
+                'new_plan.injection_time',
+                'new_plan.prescribed_by',
+                'new_plan.start_date',
+                'new_plan.note',
+                'new_plan.created_at as adjusted_at'
+            );
+
+        if ($hasPlanColumn('change_reason')) {
+            $adjustmentQuery->addSelect('new_plan.change_reason as reason');
+        } else {
+            $adjustmentQuery->selectRaw('NULL as reason');
+        }
+
+        if ($hasPlanColumn('recommendation')) {
+            $adjustmentQuery->addSelect('new_plan.recommendation');
+        } else {
+            $adjustmentQuery->selectRaw('NULL as recommendation');
+        }
+
+        $adjustments = $adjustmentQuery
+            ->orderByDesc('new_plan.created_at')
+            ->orderByDesc('new_plan.id')
+            ->get()
+            ->map(function ($row) {
+                $row->old_dose_units = (float) $row->old_dose_units;
+                $row->new_dose_units = (float) $row->new_dose_units;
+
+                return $row;
+            });
+    }
+
+    return response()->json([
+        'success' => true,
+        'data' => [
+            'basic_info' => [
+                'patient_id' => (int) $patient->id,
+                'name' => $patient->user_name,
+                'hn' => $patient->hospital_num,
+                'age' => $patient->user_age,
+                'gestational_week' => $patient->preg_week,
+                'risk_level' => null,
+                'complication_codes' => [
+                    'diabetes' => $patient->compli_diabete,
+                    'hypertension' => $patient->compli_hypertension,
+                    'preterm_birth' => $patient->compli_preterm_birth,
+                ],
+            ],
+
+            'selected_period' => [
+                'start_date' => $input['start_date'],
+                'end_date' => $input['end_date'],
+                'timezone' => 'Asia/Bangkok',
+            ],
+
+            'blood_sugar_history' => $readings,
+
+            'trend_and_summary' => [
+                'overall' => $summarize($readings),
+                'by_period' => $periodSummary,
+                'after_meal_combined' => $afterMealSummary,
+                'daily_trend' => $dailyTrend,
+                'graph_data' => $readings->map(fn ($row) => [
+                    'datetime' => $row['measured_at'],
+                    'value' => $row['value'],
+                    'series' => $row['period'],
+                    'meal' => $row['meal'],
+                    'status' => $row['status'],
+                    'target' => $row['target'],
+                ])->values(),
+            ],
+
+            'current_insulin' => [
+                'as_of_date' => $today,
+                'items' => $currentInsulin,
+            ],
+
+            'medication_adjustment_history' => [
+                'available' => $adjustmentAvailable,
+                'items' => $adjustments,
+                'reason' => $adjustmentAvailable
+                    ? null
+                    : 'ต้องเพิ่ม previous_plan_id และเชื่อมแผนใหม่กับแผนเดิม',
+            ],
+        ],
+    ]);
+}
+///////////////////////////////////////////////////////////////////
+//ปรับ insulin
+  private const DB_TIMEZONE = 'Asia/Bangkok';
+
+    private function doctorId(): string
+    {
+        $id = Session::get('doctor_id');
+
+        abort_if(
+            $id === null || $id === '',
+            401,
+            'กรุณาเข้าสู่ระบบแพทย์'
+        );
+
+        return (string) $id;
+    }
+
+    private function patientForDoctor($doctorId, $patientId)
+    {
+        $patient = DB::table('users_register as p')
+            ->where('p.id', $patientId)
+            ->whereNull('p.deleted_at')
+            ->whereExists(function ($query) use ($doctorId) {
+                $query->selectRaw('1')
+                    ->from('personal_doctor_mom as pd')
+                    ->whereColumn('pd.user_id', 'p.user_id')
+                    ->where('pd.doctor_id', $doctorId)
+                    ->whereNull('pd.deleted_at');
+            })
+            ->first(['p.id', 'p.user_id']);
+
+        abort_unless(
+            $patient,
+            404,
+            'ไม่พบผู้รับบริการหรือไม่มีสิทธิ์เข้าถึง'
+        );
+
+        return $patient;
+    }
+
+    private function planRules(): array
+    {
+        return [
+            'insulin_id' => [
+                'required',
+                'integer',
+                Rule::exists('insulins', 'id')->where('is_active', 1),
+            ],
+            'dose_units' =>
+                'required|numeric|gt:0|max:99999999.99|decimal:0,2',
+            'injection_period' => 'required|string|max:50',
+            'injection_time' => 'nullable|date_format:H:i',
+            'injection_method' => 'nullable|string|max:255',
+            'recommendation' => 'nullable|string|max:5000',
+            'note' => 'nullable|string|max:5000',
+        ];
+    }
+
+    // =====================================
+    // 1. แพทย์เพิ่มแผนอินซูลิน
+    // =====================================
+
+    public function insertPlan(Request $request)
+    {
+        $doctorId = $this->doctorId();
+
+        $data = $request->validate(array_merge(
+            $this->planRules(),
+            [
+                'user_id' => 'required|integer|min:1',
+                'start_date' => 'required|date_format:Y-m-d',
+                'end_date' =>
+                    'nullable|date_format:Y-m-d|after_or_equal:start_date',
+            ]
+        ));
+
+        $patient = $this->patientForDoctor(
+            $doctorId,
+            $data['user_id']
+        );
+
+        $now = CarbonImmutable::now(self::DB_TIMEZONE);
+
+        $effectiveFrom = CarbonImmutable::parse(
+            $data['start_date'],
+            'Asia/Bangkok'
+        )->setTimezone(self::DB_TIMEZONE);
+
+        // end_date เป็นวันสุดท้ายที่ใช้แผน
+        $effectiveUntil = !empty($data['end_date'])
+            ? CarbonImmutable::parse(
+                $data['end_date'],
+                'Asia/Bangkok'
+            )->addDay()->setTimezone(self::DB_TIMEZONE)
+            : null;
+
+        $id = DB::table('insulin_plans')->insertGetId([
+            'user_id' => $patient->id,
+            'insulin_id' => $data['insulin_id'],
+            'dose_units' => $data['dose_units'],
+            'injection_period' => $data['injection_period'],
+            'injection_time' => $data['injection_time'] ?? null,
+            'injection_method' => $data['injection_method'] ?? null,
+            'start_date' => $data['start_date'],
+            'end_date' => $data['end_date'] ?? null,
+            'effective_from' => $effectiveFrom->toDateTimeString(),
+            'effective_until' => $effectiveUntil?->toDateTimeString(),
+            'status' => 'active',
+            'previous_plan_id' => null,
+            'change_reason' => null,
+            'recommendation' => $data['recommendation'] ?? null,
+            'prescribed_by' => $doctorId,
+            'note' => $data['note'] ?? null,
+            'created_at' => $now->toDateTimeString(),
+            'updated_at' => $now->toDateTimeString(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'เพิ่มแผนอินซูลินเรียบร้อย',
+            'data' => [
+                'insulin_plan_id' => $id,
+                'patient_id' => $patient->id,
+            ],
+        ], 201);
+    }
+
+    // =====================================
+    // 2. แพทย์ปรับแผน มีผลทันที
+    // ส่งรายละเอียดแผนใหม่มาครบ
+    // =====================================
+
+    public function adjustPlan(Request $request)
+    {
+        $doctorId = $this->doctorId();
+
+        $data = $request->validate(array_merge(
+            $this->planRules(),
+            [
+                'insulin_plan_id' => 'required|integer|min:1',
+                'change_reason' => 'required|string|max:5000',
+            ]
+        ));
+
+        $result = DB::transaction(function () use ($data, $doctorId) {
+            $old = DB::table('insulin_plans')
+                ->where('id', $data['insulin_plan_id'])
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless($old, 404, 'ไม่พบแผนอินซูลิน');
+
+            $this->patientForDoctor($doctorId, $old->user_id);
+
+            $now = CarbonImmutable::now(self::DB_TIMEZONE);
+            $nowString = $now->toDateTimeString();
+            $todayThai = $now->setTimezone('Asia/Bangkok')->toDateString();
+
+            /*
+             * รองรับแผนเดิมก่อนเพิ่ม effective_from/until
+             * โดยใช้ start_date/end_date เป็นค่าเริ่มต้น
+             */
+            $oldFrom = $old->effective_from
+                ? CarbonImmutable::parse(
+                    $old->effective_from,
+                    self::DB_TIMEZONE
+                )
+                : CarbonImmutable::parse(
+                    $old->start_date,
+                    'Asia/Bangkok'
+                )->setTimezone(self::DB_TIMEZONE);
+
+            $oldUntil = $old->effective_until
+                ? CarbonImmutable::parse(
+                    $old->effective_until,
+                    self::DB_TIMEZONE
+                )
+                : ($old->end_date
+                    ? CarbonImmutable::parse(
+                        $old->end_date,
+                        'Asia/Bangkok'
+                    )->addDay()->setTimezone(self::DB_TIMEZONE)
+                    : null);
+
+            if ($old->status !== 'active'
+                || $now->lt($oldFrom)
+                || ($oldUntil !== null && $now->gte($oldUntil))) {
+                throw ValidationException::withMessages([
+                    'insulin_plan_id' =>
+                        'ต้องเลือกแผน active ที่กำลังมีผลอยู่',
+                ]);
+            }
+
+            // สร้างแผนใหม่ เก็บข้อมูลแผนเก่าไว้ครบ
+            $newId = DB::table('insulin_plans')->insertGetId([
+                'user_id' => $old->user_id,
+                'insulin_id' => $data['insulin_id'],
+                'dose_units' => $data['dose_units'],
+                'injection_period' => $data['injection_period'],
+                'injection_time' => $data['injection_time'] ?? null,
+                'injection_method' => $data['injection_method'] ?? null,
+                'start_date' => $todayThai,
+
+                // คงวันสิ้นสุดเดิมของแผน
+                'end_date' => $old->end_date,
+                'effective_from' => $nowString,
+                'effective_until' => $oldUntil?->toDateTimeString(),
+
+                'status' => 'active',
+                'previous_plan_id' => $old->id,
+                'change_reason' => $data['change_reason'],
+                'recommendation' => $data['recommendation'] ?? null,
+                'prescribed_by' => $doctorId,
+                'note' => $data['note'] ?? null,
+                'created_at' => $nowString,
+                'updated_at' => $nowString,
+            ]);
+
+            DB::table('insulin_plans')
+                ->where('id', $old->id)
+                ->update([
+                    'status' => 'replaced',
+                    'effective_from' => $oldFrom->toDateTimeString(),
+                    'effective_until' => $nowString,
+                    'end_date' => $todayThai,
+                    'updated_at' => $nowString,
+                ]);
+
+            return [
+                'old_plan_id' => $old->id,
+                'new_plan_id' => $newId,
+                'old_dose_units' => (float) $old->dose_units,
+                'new_dose_units' => (float) $data['dose_units'],
+                'effective_from' => $now->toIso8601String(),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'ปรับแผนอินซูลินเรียบร้อย',
+            'data' => $result,
+        ], 201);
+    }
+
+    // =====================================
+    // 3. หญิงตั้งครรภ์บันทึกการฉีดจริง
+    // =====================================
+
+    public function insertPatientHistory(Request $request)
+    {
+        /*
+         * สมมติระบบล็อกอินเก็บ LINE user_id ใน Session user_id
+         * ถ้าใช้ LIFF ให้แทนด้วยตัวตนที่ Backend ตรวจ token แล้ว
+         */
+        $lineUserId = Session::get('user_id');
+
+        abort_if(
+            $lineUserId === null || $lineUserId === '',
+            401,
+            'กรุณาเข้าสู่ระบบผู้รับบริการ'
+        );
+
+        $data = $request->validate([
+            'insulin_plan_id' => 'required|integer|min:1',
+            'injection_date' => 'required|date_format:Y-m-d',
+            'injection_time' => 'required|date_format:H:i',
+            'status' => ['required', Rule::in(['injected', 'skipped'])],
+            'dose_units' => [
+                'required_if:status,injected',
+                'prohibited_if:status,skipped',
+                'nullable',
+                'numeric',
+                'gt:0',
+                'max:99999999.99',
+                'decimal:0,2',
+            ],
+            'note' => 'nullable|string|max:5000',
+        ]);
+
+        $patient = DB::table('users_register')
+            ->where('user_id', $lineUserId)
+            ->whereNull('deleted_at')
+            ->first(['id']);
+
+        abort_unless($patient, 404, 'ไม่พบผู้รับบริการ');
+
+        $eventAt = CarbonImmutable::parse(
+            $data['injection_date'] . ' ' . $data['injection_time'],
+            'Asia/Bangkok'
+        )->setTimezone(self::DB_TIMEZONE);
+
+        if ($eventAt->gt(CarbonImmutable::now(self::DB_TIMEZONE))) {
+            throw ValidationException::withMessages([
+                'injection_date' => 'ไม่สามารถบันทึกเวลาล่วงหน้าได้',
+            ]);
+        }
+
+        $result = DB::transaction(function () use (
+            $patient,
+            $data,
+            $eventAt
+        ) {
+            $plan = DB::table('insulin_plans')
+                ->where('id', $data['insulin_plan_id'])
+                ->where('user_id', $patient->id)
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless(
+                $plan,
+                404,
+                'ไม่พบแผนอินซูลินของผู้รับบริการ'
+            );
+
+            $from = $plan->effective_from
+                ? CarbonImmutable::parse(
+                    $plan->effective_from,
+                    self::DB_TIMEZONE
+                )
+                : CarbonImmutable::parse(
+                    $plan->start_date,
+                    'Asia/Bangkok'
+                )->setTimezone(self::DB_TIMEZONE);
+
+            $until = $plan->effective_until
+                ? CarbonImmutable::parse(
+                    $plan->effective_until,
+                    self::DB_TIMEZONE
+                )
+                : ($plan->end_date
+                    ? CarbonImmutable::parse(
+                        $plan->end_date,
+                        'Asia/Bangkok'
+                    )->addDay()->setTimezone(self::DB_TIMEZONE)
+                    : null);
+
+            // ยอมรับแผนเก่าสำหรับบันทึกย้อนหลังในช่วงที่แผนนั้นมีผล
+            if (!in_array($plan->status, ['active', 'replaced'], true)
+                || $eventAt->lt($from)
+                || ($until !== null && $eventAt->gte($until))) {
+                throw ValidationException::withMessages([
+                    'insulin_plan_id' =>
+                        'แผนนี้ไม่มีผลในวันที่และเวลาที่เลือก',
+                ]);
+            }
+
+            $now = CarbonImmutable::now(self::DB_TIMEZONE)
+                ->toDateTimeString();
+
+            $historyId = DB::table('insulin_history')->insertGetId([
+                'user_id' => $patient->id,
+                'insulin_plan_id' => $plan->id,
+                'insulin_id' => $plan->insulin_id,
+                'injection_date' => $data['injection_date'],
+                'injection_time' => $data['injection_time'],
+
+                // ขนาดที่ผู้รับบริการรายงานว่าฉีดจริง
+                'dose_units' => $data['status'] === 'injected'
+                    ? $data['dose_units']
+                    : null,
+
+                'status' => $data['status'],
+                'note' => $data['note'] ?? null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            return [
+                'history_id' => $historyId,
+                'insulin_plan_id' => $plan->id,
+                'prescribed_dose_units' => (float) $plan->dose_units,
+                'actual_dose_units' => $data['status'] === 'injected'
+                    ? (float) $data['dose_units']
+                    : null,
+                'status' => $data['status'],
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'บันทึกการใช้อินซูลินเรียบร้อย',
+            'data' => $result,
+        ], 201);
+    }
+}
+
