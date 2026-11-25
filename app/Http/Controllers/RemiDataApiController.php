@@ -3199,7 +3199,7 @@ public function patient_diabetes_detail(Request $request)
     // ---------------------------------------
 
     $patient = DB::table('users_register as p')
-        ->where('p.id', $input['user_id'])
+        ->where('p.user_id', $input['user_id'])
         ->whereNull('p.deleted_at')
         ->whereExists(function ($query) use ($doctorId) {
             $query->selectRaw('1')
@@ -3412,7 +3412,7 @@ public function patient_diabetes_detail(Request $request)
 
     $currentQuery = DB::table('insulin_plans as ip')
         ->join('insulins as i', 'i.id', '=', 'ip.insulin_id')
-        ->where('ip.user_id', $patient->id)
+        ->where('ip.user_id', $patient->user_id)
         ->where('ip.status', 'active')
         ->where('ip.start_date', '<=', $today)
         ->where(function ($query) use ($today) {
@@ -3473,7 +3473,7 @@ public function patient_diabetes_detail(Request $request)
                 '=',
                 'old_plan.insulin_id'
             )
-            ->where('new_plan.user_id', $patient->id)
+            ->where('new_plan.user_id', $patient->user_id)
             ->where('new_plan.created_at', '>=', $from)
             ->where('new_plan.created_at', '<', $until)
             ->select(
@@ -3874,7 +3874,7 @@ public function patient_diabetes_detail(Request $request)
         ) {
             $plan = DB::table('insulin_plans')
                 ->where('id', $data['insulin_plan_id'])
-                ->where('user_id', $patient->id)
+                ->where('user_id', $patient->user_id)
                 ->lockForUpdate()
                 ->first();
 
@@ -3920,7 +3920,7 @@ public function patient_diabetes_detail(Request $request)
                 ->toDateTimeString();
 
             $historyId = DB::table('insulin_history')->insertGetId([
-                'user_id' => $patient->id,
+                'user_id' => $patient->user_id,
                 'insulin_plan_id' => $plan->id,
                 'insulin_id' => $plan->insulin_id,
                 'injection_date' => $data['injection_date'],
