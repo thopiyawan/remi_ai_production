@@ -654,7 +654,7 @@ public function get_patient_detail(Request $request)
     };
 
     $foodQuery = DB::table('meal_transactions')
-        ->where('user_id', $id);
+        ->where('user_id', $lineUserId);
 
     $vitaminQuery = DB::table('tracker')
         ->where('user_id', $lineUserId)
@@ -663,7 +663,7 @@ public function get_patient_detail(Request $request)
         ->whereRaw("TRIM(vitamin) <> ''");
 
     $exerciseQuery = DB::table('exercise_logs')
-        ->where('user_id', $id)
+        ->where('user_id', $lineUserId)
         ->whereNull('deleted_at');
 
     $fetalQuery = DB::table('fetal_movement')
@@ -757,7 +757,7 @@ public function get_patient_detail(Request $request)
 
     $plans = DB::table('insulin_plans as ip')
         ->join('insulins as i', 'i.id', '=', 'ip.insulin_id')
-        ->where('ip.user_id', $id)
+        ->where('ip.user_id', $lineUserId)
         ->select(
             'ip.id',
             'ip.start_date as date',
@@ -1016,7 +1016,7 @@ public function patient_health_history(Request $request)
     // ----------------------------------
 
     $exerciseBase = DB::table('exercise_logs')
-        ->where('user_id', $id)
+        ->where('user_id', $lineUserId)
         ->whereNull('deleted_at');
 
     $exercises = (clone $exerciseBase)
@@ -1156,7 +1156,7 @@ public function patient_health_history(Request $request)
     }
 
     $latestMeals = DB::table('meal_transactions')
-        ->where('user_id', $id)
+        ->where('user_id', $lineUserId)
         ->orderByDesc('created_at')
         ->orderByDesc('id')
         ->limit(20)
@@ -3667,7 +3667,7 @@ public function patient_diabetes_detail(Request $request)
             : null;
 
         $id = DB::table('insulin_plans')->insertGetId([
-            'user_id' => $patient->id,
+            'user_id' => $patient->user_id,
             'insulin_id' => $data['insulin_id'],
             'dose_units' => $data['dose_units'],
             'injection_period' => $data['injection_period'],
@@ -3692,7 +3692,7 @@ public function patient_diabetes_detail(Request $request)
             'message' => 'เพิ่มแผนอินซูลินเรียบร้อย',
             'data' => [
                 'insulin_plan_id' => $id,
-                'patient_id' => $patient->id,
+                'patient_id' => $patient->user_id,
             ],
         ], 201);
     }
