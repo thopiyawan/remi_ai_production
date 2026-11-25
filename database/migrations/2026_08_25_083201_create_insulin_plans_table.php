@@ -62,6 +62,8 @@ return new class extends Migration
                 $table->text('change_reason')->nullable();
                 $table->text('recommendation')->nullable();
                 $table->text('injection_method')->nullable();
+                $table->dateTime('effective_from')->nullable();
+                $table->dateTime('effective_until')->nullable();
                 $table->timestamps();
 
                 $table->index(['user_id', 'status']);
