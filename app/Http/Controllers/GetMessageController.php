@@ -244,6 +244,21 @@ class GetMessageController extends Controller {
                               'body' => $replyResponse->body(),
                           ]);
                       }
+
+                      \Log::error('LINE get image content failed', [
+                          'message_id' => $messageId,
+                          'status' => $response->getHTTPStatus(),
+                          'body' => $response->getRawBody(),
+                      ]);
+
+                  } else {
+
+                      \Log::error('LINE get image content failed', [
+                          'message_id' => $messageId,
+                          'status' => $response->getHTTPStatus(),
+                          'body' => $response->getRawBody(),
+                      ]);
+
                   }
 
                 \Log::info('Meal analysis response', [
@@ -4839,192 +4854,195 @@ public function chatWithGemini($userMessage)
 
 private function buildFlexMessage($data)
 {
-    return app(MealAnalysisFlexMessage::class)->build(is_array($data) ? $data : []);
+    // return app(MealAnalysisFlexMessage::class)->build(is_array($data) ? $data : []);
+    return app(MealAnalysisFlexMessage::class)->build(
+        is_array($data) ? $data : []
+    );
 
-    $nutrition = $data['nutrition'] ?? [];
-    $analysis = $data['analysis'] ?? [];
+    // $nutrition = $data['nutrition'] ?? [];
+    // $analysis = $data['analysis'] ?? [];
 
-    $mealName = $data['full_foodname'] ?? 'ไม่ทราบชื่ออาหาร';
-    $meal_risk_level = $data['meal_risk_level'] ?? '-';
+    // $mealName = $data['full_foodname'] ?? 'ไม่ทราบชื่ออาหาร';
+    // $meal_risk_level = $data['meal_risk_level'] ?? '-';
 
-    $calories = $nutrition['calories'] ?? 0;
-    $carb = $nutrition['carb'] ?? 0;
-    $protein = $nutrition['protein'] ?? 0;
-    $fat = $nutrition['fat'] ?? 0;
-    $fiber = $nutrition['fiber'] ?? 0;
-    $weight = $nutrition['portion_estimation'] ?? 0;
+    // $calories = $nutrition['calories'] ?? 0;
+    // $carb = $nutrition['carb'] ?? 0;
+    // $protein = $nutrition['protein'] ?? 0;
+    // $fat = $nutrition['fat'] ?? 0;
+    // $fiber = $nutrition['fiber'] ?? 0;
+    // $weight = $nutrition['portion_estimation'] ?? 0;
 
-    $analysisText = $analysis['message'] ?? '';
+    // $analysisText = $analysis['message'] ?? '';
 
-    $recommendText = '';
+    // $recommendText = '';
 
-    foreach (($data['recommendations'] ?? []) as $item) {
-        $recommendText .= "• {$item}\n";
-    }
+    // foreach (($data['recommendations'] ?? []) as $item) {
+    //     $recommendText .= "• {$item}\n";
+    // }
 
-    return [
-        'type' => 'bubble',
-        'size' => 'giga',
+    // return [
+    //     'type' => 'bubble',
+    //     'size' => 'giga',
 
-        'header' => [
-            'type' => 'box',
-            'layout' => 'vertical',
-            'backgroundColor' => '#E67E22',
-            'contents' => [
-                [
-                    'type' => 'text',
-                    'text' => "🍽️ {$mealName}",
-                    'weight' => 'bold',
-                    'size' => 'lg',
-                    'color' => '#FFFFFF',
-                    'wrap' => true
-                ],
-                [
-                    'type' => 'text',
-                    'text' => "มื้อนี้ : {$meal_risk_level}",
-                    'weight' => 'bold',
-                    'size' => 'md',
-                    'color' => '#FFFFFF',
-                    'wrap' => true
-                ]
-            ]
-        ],
+    //     'header' => [
+    //         'type' => 'box',
+    //         'layout' => 'vertical',
+    //         'backgroundColor' => '#E67E22',
+    //         'contents' => [
+    //             [
+    //                 'type' => 'text',
+    //                 'text' => "🍽️ {$mealName}",
+    //                 'weight' => 'bold',
+    //                 'size' => 'lg',
+    //                 'color' => '#FFFFFF',
+    //                 'wrap' => true
+    //             ],
+    //             [
+    //                 'type' => 'text',
+    //                 'text' => "มื้อนี้ : {$meal_risk_level}",
+    //                 'weight' => 'bold',
+    //                 'size' => 'md',
+    //                 'color' => '#FFFFFF',
+    //                 'wrap' => true
+    //             ]
+    //         ]
+    //     ],
 
-        'body' => [
-            'type' => 'box',
-            'layout' => 'vertical',
-            'contents' => [
+    //     'body' => [
+    //         'type' => 'box',
+    //         'layout' => 'vertical',
+    //         'contents' => [
 
-                [
-                    'type' => 'box',
-                    'layout' => 'horizontal',
-                    'contents' => [
-                        [
-                            'type' => 'text',
-                            'text' => '⚖️ น้ำหนักอาหาร',
-                            'size' => 'sm'
-                        ],
-                        [
-                            'type' => 'text',
-                            'text' => "{$weight} g",
-                            'size' => 'sm',
-                            'align' => 'end',
-                            'weight' => 'bold'
-                        ]
-                    ]
-                ],
+    //             [
+    //                 'type' => 'box',
+    //                 'layout' => 'horizontal',
+    //                 'contents' => [
+    //                     [
+    //                         'type' => 'text',
+    //                         'text' => '⚖️ น้ำหนักอาหาร',
+    //                         'size' => 'sm'
+    //                     ],
+    //                     [
+    //                         'type' => 'text',
+    //                         'text' => "{$weight} g",
+    //                         'size' => 'sm',
+    //                         'align' => 'end',
+    //                         'weight' => 'bold'
+    //                     ]
+    //                 ]
+    //             ],
 
-                [
-                    'type' => 'box',
-                    'layout' => 'horizontal',
-                    'contents' => [
-                        [
-                            'type' => 'text',
-                            'text' => '🔥 พลังงาน',
-                            'size' => 'sm'
-                        ],
-                        [
-                            'type' => 'text',
-                            'text' => "{$calories} kcal",
-                            'size' => 'sm',
-                            'align' => 'end',
-                            'weight' => 'bold'
-                        ]
-                    ]
-                ],
+    //             [
+    //                 'type' => 'box',
+    //                 'layout' => 'horizontal',
+    //                 'contents' => [
+    //                     [
+    //                         'type' => 'text',
+    //                         'text' => '🔥 พลังงาน',
+    //                         'size' => 'sm'
+    //                     ],
+    //                     [
+    //                         'type' => 'text',
+    //                         'text' => "{$calories} kcal",
+    //                         'size' => 'sm',
+    //                         'align' => 'end',
+    //                         'weight' => 'bold'
+    //                     ]
+    //                 ]
+    //             ],
 
-                [
-                    'type' => 'separator',
-                    'margin' => 'md'
-                ],
+    //             [
+    //                 'type' => 'separator',
+    //                 'margin' => 'md'
+    //             ],
 
-                [
-                    'type' => 'text',
-                    'text' => '📊 สรุปค่าโภชนาการ',
-                    'weight' => 'bold',
-                    'margin' => 'md'
-                ],
+    //             [
+    //                 'type' => 'text',
+    //                 'text' => '📊 สรุปค่าโภชนาการ',
+    //                 'weight' => 'bold',
+    //                 'margin' => 'md'
+    //             ],
 
-                [
-                    'type' => 'text',
-                    'text' => "คาร์บ {$carb}g | โปรตีน {$protein}g | ไขมัน {$fat}g | ใยอาหาร {$fiber}g",
-                    'wrap' => true,
-                    'size' => 'sm'
-                ],
+    //             [
+    //                 'type' => 'text',
+    //                 'text' => "คาร์บ {$carb}g | โปรตีน {$protein}g | ไขมัน {$fat}g | ใยอาหาร {$fiber}g",
+    //                 'wrap' => true,
+    //                 'size' => 'sm'
+    //             ],
 
-                [
-                    'type' => 'separator',
-                    'margin' => 'md'
-                ],
+    //             [
+    //                 'type' => 'separator',
+    //                 'margin' => 'md'
+    //             ],
 
-                [
-                    'type' => 'text',
-                    'text' => '⚠️ ผลวิเคราะห์ GDM',
-                    'weight' => 'bold',
-                    'margin' => 'md'
-                ],
+    //             [
+    //                 'type' => 'text',
+    //                 'text' => '⚠️ ผลวิเคราะห์ GDM',
+    //                 'weight' => 'bold',
+    //                 'margin' => 'md'
+    //             ],
 
-                [
-                    'type' => 'text',
-                    'text' => $analysisText,
-                    'wrap' => true,
-                    'size' => 'xs'
-                ],
+    //             [
+    //                 'type' => 'text',
+    //                 'text' => $analysisText,
+    //                 'wrap' => true,
+    //                 'size' => 'xs'
+    //             ],
 
-                [
-                    'type' => 'separator',
-                    'margin' => 'md'
-                ],
+    //             [
+    //                 'type' => 'separator',
+    //                 'margin' => 'md'
+    //             ],
 
-                [
-                    'type' => 'text',
-                    'text' => '💡 คำแนะนำ',
-                    'weight' => 'bold',
-                    'margin' => 'md'
-                ],
+    //             [
+    //                 'type' => 'text',
+    //                 'text' => '💡 คำแนะนำ',
+    //                 'weight' => 'bold',
+    //                 'margin' => 'md'
+    //             ],
 
-                [
-                    'type' => 'text',
-                    'text' => trim($recommendText),
-                    'wrap' => true,
-                    'size' => 'xs'
-                ]
-            ]
-        ],
-        'footer' => [
-            'type' => 'box',
-            'layout' => 'horizontal',
-            'spacing' => 'sm',
-            'contents' => [
-                [
-                    'type' => 'button',
-                    'style' => 'primary',
-                    'action' => [
-                        'type' => 'postback',
-                        'label' => '💾 บันทึกมื้อนี้',
-                        'data' => 'action=save_meal'
-                    ]
-                ],
-                [
-                    'type' => 'button',
-                    'style' => 'secondary',
-                    'action' => [
-                        'type' => 'message',
-                        'label' => '📷 วิเคราะห์รูปใหม่',
-                        'text' => 'วิเคราะห์อาหาร'
-                    ]
-                ],
-                // [
-                //     'type' => 'button',
-                //     'action' => [
-                //         'type' => 'message',
-                //         'label' => '🥗 แนะนำเมนู',
-                //         'text' => 'แนะนำเมนูสำหรับหญิงตั้งครรภ์'
-                //     ]
-                // ]
-            ]
-        ]
-    ];
+    //             [
+    //                 'type' => 'text',
+    //                 'text' => trim($recommendText),
+    //                 'wrap' => true,
+    //                 'size' => 'xs'
+    //             ]
+    //         ]
+    //     ],
+    //     'footer' => [
+    //         'type' => 'box',
+    //         'layout' => 'horizontal',
+    //         'spacing' => 'sm',
+    //         'contents' => [
+    //             [
+    //                 'type' => 'button',
+    //                 'style' => 'primary',
+    //                 'action' => [
+    //                     'type' => 'postback',
+    //                     'label' => '💾 บันทึกมื้อนี้',
+    //                     'data' => 'action=save_meal'
+    //                 ]
+    //             ],
+    //             [
+    //                 'type' => 'button',
+    //                 'style' => 'secondary',
+    //                 'action' => [
+    //                     'type' => 'message',
+    //                     'label' => '📷 วิเคราะห์รูปใหม่',
+    //                     'text' => 'วิเคราะห์อาหาร'
+    //                 ]
+    //             ],
+    //             // [
+    //             //     'type' => 'button',
+    //             //     'action' => [
+    //             //         'type' => 'message',
+    //             //         'label' => '🥗 แนะนำเมนู',
+    //             //         'text' => 'แนะนำเมนูสำหรับหญิงตั้งครรภ์'
+    //             //     ]
+    //             // ]
+    //         ]
+    //     ]
+    // ];
 }
    
 }
